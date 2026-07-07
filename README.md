@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# socketty
 
-## Getting Started
+실시간 소켓 통신 기반 웹 애플리케이션. **pnpm 워크스페이스 모노레포**로 구성되어
+프론트엔드·서버·공유 코드를 한 저장소에서 관리합니다.
 
-First, run the development server:
+## 기술 스택
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **Language** — TypeScript
+- **Frontend** — Next.js 16 (App Router, Turbopack), React 19
+- **Styling** — Tailwind CSS 4
+- **Package Manager** — pnpm (workspace)
+
+## 프로젝트 구조
+
+```
+socketty/
+├─ apps/
+│  ├─ web/        # Next.js 앱 (@socketty/web)
+│  └─ server/     # 서버 앱 (예정)
+├─ packages/
+│  └─ shared/     # 클라이언트·서버 공유 코드 (예정)
+└─ docs/          # 설계 문서 & 개발 로그
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 시작하기
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+pnpm install     # 의존성 설치 (루트에서)
+pnpm dev         # web 개발 서버 실행
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+[http://localhost:3000](http://localhost:3000) 접속.
 
-## Learn More
+| 명령 | 설명 |
+|---|---|
+| `pnpm dev` | web 개발 서버 |
+| `pnpm build` | web 프로덕션 빌드 |
+| `pnpm lint` | 린트 |
 
-To learn more about Next.js, take a look at the following resources:
+특정 패키지만 조작하려면: `pnpm --filter @socketty/web <command>`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 문서
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- 📓 **[개발 로그 & 기술 의사결정 기록 (DEVLOG)](./docs/DEVLOG.md)** — 왜 이렇게 만들었는가
+- 🏗️ **[모노레포 구조 가이드](./docs/monorepo.md)** — 구조와 동작 방식 상세
