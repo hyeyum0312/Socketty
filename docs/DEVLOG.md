@@ -11,6 +11,8 @@
 - [의사결정 기록 (ADR)](#의사결정-기록-adr)
   - [ADR-001. 모노레포 + pnpm workspace 채택](#adr-001-모노레포--pnpm-workspace-채택)
 - [학습 로그](#학습-로그)
+  - [2026-07-08 — 클라이언트 소켓 연결과 생명주기](#2026-07-08--클라이언트-소켓-연결과-생명주기)
+  - [2026-07-08 — WebSocket 기초: ws / wss 구분 (라이브러리 vs 프로토콜)](#2026-07-08--websocket-기초-ws--wss-구분-라이브러리-vs-프로토콜)
   - [2026-07-07 — 단일 앱 → pnpm 모노레포 전환](#2026-07-07--단일-앱--pnpm-모노레포-전환)
 - [자주 하는 실수 모음](#자주-하는-실수-모음)
 - [앞으로 추가할 것](#앞으로-추가할-것)
@@ -88,6 +90,112 @@ socketty/
 ---
 
 ## 학습 로그
+
+### 2026-07-08 — 클라이언트 소켓 연결과 생명주기
+
+**한 일**
+- `apps/web`에 에코 클라이언트 구현. 서버 컴포넌트(`page.tsx`)가 클라이언트 컴포넌트
+  (`EchoChat.tsx`, `"use client"`)를 품는 구조. 소켓 연결은 `useEffect`에서.
+
+**서버 API ≠ 클라이언트 API**
+같은 "WebSocket"이지만 서버(`ws` 라이브러리)와 브라우저의 API 모양이 다르다.
+
+| | 서버 (`ws`, server.js) | 클라이언트 (브라우저) |
+|---|---|---|
+| 연결됨 | `wsServer.on("connection", (socket) => …)` | `socket.onopen = () => …` |
+| 메시지 | `socket.on("message", (data) => …)` | `socket.onmessage = (event) => …` |
+| 끊김 | `socket.on("close", () => …)` | `socket.onclose = () => …` |
+| 방식 | `.on("이벤트", fn)` — **메서드 호출** | `.onX = fn` — **속성 대입** |
+| 데이터 | `data` (Buffer → `toString()`) | `event.data` (문자열) |
+
+- 실수 기록: 클라이언트에 서버 방식(`socket.on("connection", …)`)을 써서 틀렸음.
+  클라이언트엔 "connection" 이벤트가 없다 — 내가 곧 그 연결 본인이라 "내가 열렸다(`onopen`)"뿐.
+
+**등록(register) vs 실행(execute)**
+- `.on(…)` / `.onX =` 은 콜백을 **지금 실행하는 게 아니라 "이벤트 터지면 실행해"라고 예약**하는 것.
+- 그래서 접속 순간엔 핸들러 등록만 되고, 몸통은 이벤트 발생 시(나중에, 여러 번) 실행됨 = 이벤트 기반.
+
+**Next.js 흐름**
+- 서버가 HTML을 SSR로 렌더 → 브라우저 표시 → 하이드레이션 → **끝난 뒤 `useEffect`에서 소켓 연결**.
+- 소켓 코드는 브라우저 API라 반드시 **클라이언트 컴포넌트**(`"use client"`)에 있어야 함.
+
+**소켓 생명주기**
+- `useEffect(() => {...}, [])` 의 빈 배열 → **마운트 때 1번만** 연결 생성. 리렌더로는 새로 안 만듦.
+- `return () => socket.close()` (cleanup) → **언마운트**(페이지 이동/탭 닫기 등) 때 정리.
+- ⚠️ 개발 모드(Strict Mode)는 일부러 mount→unmount→mount → 연결·끊김·연결이 한 번 겹쳐 보임.
+  버그 아님. 프로덕션에선 1번.
+- 소켓 객체는 `useRef`에 보관 → `useEffect` 밖(`handleSend`)에서도 접근, 리렌더에도 유지.
+
+---
+
+### 2026-07-08 — WebSocket 기초: ws / wss 구분 (라이브러리 vs 프로토콜)
+
+**배경**
+에코 서버를 만들며 코드에 `ws`라는 글자가 여러 번 등장 → 헷갈려서 개념 정리.
+결론: `ws`/`wss`는 **문맥에 따라 완전히 다른 두 가지**(npm 라이브러리 vs URL 프로토콜)를 가리킨다.
+
+**WebSocket이 필요한 이유**
+- HTTP는 "요청 → 응답" 후 연결이 끊김. 클라이언트가 물어봐야만 서버가 답함.
+  → 서버가 먼저 말 거는 실시간 통신(채팅/알림)이 불가능.
+- WebSocket은 연결을 한 번 맺고 유지하며 **양쪽이 아무 때나** 메시지를 보냄(full-duplex).
+
+| | HTTP | WebSocket |
+|---|---|---|
+| 연결 | 요청마다 열고 닫음 | 한 번 열고 계속 유지 |
+| 방향 | 클라이언트가 물어봐야 응답 | 양쪽 다 먼저 말 걸 수 있음 |
+| 용도 | 페이지 로딩, API | 채팅, 알림, 실시간 게임 |
+
+- 첫 연결은 **HTTP로 시작**함. 클라이언트가 `Upgrade: websocket` 헤더로 요청 →
+  서버가 `101 Switching Protocols`로 응답하며 연결을 승격. 이걸 **핸드셰이크**라 부름.
+
+**`ws`가 가리키는 두 가지 (핵심)**
+
+```
+import { WebSocketServer } from "ws";        // ① 라이브러리 이름
+new WebSocket("ws://localhost:4001")          // ② 주소 프로토콜
+```
+
+| | 정체 | 설명 |
+|---|---|---|
+| ① `ws` | npm 라이브러리 | Node용 WebSocket 도구. 브라우저엔 `WebSocket`이 내장이라 불필요하지만, Node엔 없어서 설치 |
+| ② `ws://` / `wss://` | URL 프로토콜 | `http://` / `https://`의 WebSocket 버전 |
+
+**서버의 두 객체: `wsServer`(서버) vs `socket`(연결)**
+
+| 변수 | 의미 | 비유 |
+|---|---|---|
+| `wsServer` (WebSocketServer) | 서버 전체 (손님 받는 가게) | 식당 그 자체 |
+| `socket` (connection) | 접속한 클라이언트 **한 명**과의 연결 | 손님이 앉은 테이블 |
+
+```js
+wsServer.on("connection", (socket) => {  // 새 손님이 올 때마다
+  socket.on("message", ...)               // "그 손님"이 하는 말
+  socket.send(...)                        // "그 손님"에게만 답함
+});
+```
+- 손님이 100명이면 `socket`도 100개(서로 다른 사람).
+- 특정 손님 → 그 `socket.send()`, 전체 뿌리기(broadcast) → `wsServer.clients` 순회.
+
+**`ws://` vs `wss://` (= http vs https)**
+
+| | `ws://` | `wss://` |
+|---|---|---|
+| 명칭 | WebSocket | WebSocket **Secure** |
+| 암호화 | ❌ 평문 | ✅ TLS 암호화 |
+| 대응 HTTP | `http://` | `https://` |
+| 기본 포트 | 80 | 443 |
+| 용도 | localhost 개발 | 실제 배포 |
+
+- ⚠️ `https://` 사이트에선 `ws://` 연결이 **브라우저에 의해 차단됨**(mixed content). → `wss` 필수.
+- localhost 개발은 `ws://`로 충분. (그래서 연습 코드는 `ws://localhost:4001`)
+- `wss`는 `ws` 라이브러리를 **HTTPS 서버 위에 얹으면** 자동으로 됨 = "ws + TLS 인증서".
+  배포 단계에서 다룰 것.
+
+**배운 점 한 줄 요약**
+> `ws`는 문맥이 둘: **npm 라이브러리 이름** vs **URL 프로토콜(`ws://`/`wss://`)**.
+> `wss://`는 `ws://`의 보안 버전(= https 관계).
+
+---
 
 ### 2026-07-07 — 단일 앱 → pnpm 모노레포 전환
 
