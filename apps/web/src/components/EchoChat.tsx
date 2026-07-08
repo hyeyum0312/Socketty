@@ -3,26 +3,59 @@
 import { useEffect, useRef, useState } from "react";
 
 const WS_URL = "ws://localhost:4001";
+const IDLE_LIMIT_MS = 30 * 60 * 1000; // 30분
 
 export default function EchoChat() {
   const [connected, setConnected] = useState(false);
   const [messages, setMessages] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const socketRef = useRef<WebSocket | null>(null);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 페이지가 브라우저에 뜬 뒤(하이드레이션 후) 1번 실행 → 소켓 연결
   useEffect(() => {
-    const socket = new WebSocket(WS_URL); // (1) 연결 생성
-    socketRef.current = socket;
+    // 소켓 연결 (재연결에도 쓰려고 함수로 분리)
+    function connect() {
+      const socket = new WebSocket(WS_URL);
+      socketRef.current = socket;
+      socket.onopen = () => setConnected(true);
+      socket.onmessage = (event) => setMessages((prev) => [...prev, event.data]);
+      socket.onclose = () => setConnected(false);
+      // 실제 앱이면 여기서 "보던 항목 다시 subscribe" 필요.
+      // 지금 에코 서버엔 구독 개념이 없어 생략.
+    }
 
-    socket.onopen = () => setConnected(true); // (2) 연결되면 초록불
-    socket.onmessage = (event) => {
-      // (3) 서버가 보낸 메시지를 로그에 추가
-      setMessages((prev) => [...prev, event.data]);
+    connect();
+
+    // 탭이 숨겨짐/다시 보임을 감지
+    function handleVisibility() {
+      if (document.hidden) {
+        // 30분 뒤 소켓을 닫는 타이머 시작 → idleTimerRef.current 에 저장
+        idleTimerRef.current = setTimeout(() => {
+          socketRef.current?.close();
+        }, IDLE_LIMIT_MS);
+      } else {
+        //걸려있는 타이머 취소
+        if (idleTimerRef.current) {
+          clearTimeout(idleTimerRef.current);
+          idleTimerRef.current = null;
+        }
+
+        // 소켓이 닫힌 상태면 다시 connect
+        if (socketRef.current?.readyState === WebSocket.CLOSED) {
+          connect();
+        }
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    // cleanup: 리스너 + 타이머 + 소켓 정리
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      // 걸려있는 타이머가 있으면 clearTimeout
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      socketRef.current?.close();
     };
-    socket.onclose = () => setConnected(false); // (4) 끊기면 상태 off
-
-    return () => socket.close(); // (5) 컴포넌트 사라질 때 정리
   }, []);
 
   function handleSend(e: React.FormEvent) {
