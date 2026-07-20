@@ -9,7 +9,6 @@
     "chat": "node --watch chat.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.110.0",
     "@socketty/shared": "workspace:^",
     "socket.io": "^4.8.3",
     "ws": "^8.21.0"

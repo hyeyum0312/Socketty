@@ -51,9 +51,9 @@
 socketty/
 ├─ apps/
 │  ├─ web/        # Next.js 앱 (@socketty/web)
-│  └─ server/     # 서버 앱 (예정)
+│  └─ server/     # Node 소켓 서버 (@socketty/server) — 에코(ws) + 채팅(Socket.IO)
 └─ packages/
-   └─ shared/     # 공유 코드 (예정)
+   └─ shared/     # 공유 코드 (@socketty/shared) — 소켓 이벤트 이름
 ```
 
 ---

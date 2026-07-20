@@ -46,20 +46,18 @@ export default function Chat() {
     e.preventDefault();
     if (streaming || input.trim() === "") return;
 
-    // TODO(6): 화면에 내 메시지 + 빈 assistant 메시지(스트리밍이 채워질 자리) 두 개를 messages에 추가
+    // 내 메시지 + 빈 assistant 메시지(스트리밍이 채워질 자리)를 함께 추가
     setMessages((prev) => [...prev, { role: "user", text: input }, { role: "assistant", text: "" }]);
 
-    // TODO(7): socketRef.current?.emit("chat", input) 로 서버에 전송
-    //          (native의 socket.send(input) 과 비교 — socket.io는 이벤트 "이름"을 붙인다)
+    // 서버로 전송. native의 socket.send(input)과 달리 socket.io는 이벤트 "이름"을 붙인다.
     socketRef.current?.emit(EVENTS.CHAT, input);
     setInput("");
     setStreaming(true);
   }
 
   function handleStop() {
-    // TODO(8): 서버로 "중단" 신호를 보내고(emit) 스트리밍 상태를 끔
-    //   힌트: socketRef.current?.emit(EVENTS.STOP);  그리고  setStreaming(false);
-    //   (native의 socket.send처럼 데이터 없이 "이벤트만" 보내도 됨)
+    // 서버로 "중단" 신호를 보내고 스트리밍 상태를 끈다.
+    // (데이터 없이 이벤트 이름만 emit — native의 socket.send와 대비되는 지점)
     socketRef.current?.emit(EVENTS.STOP);
     setStreaming(false);
   }
