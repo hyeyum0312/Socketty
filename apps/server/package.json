@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
-    "chat": "node --watch chat.js"
+    "chat": "node --watch chat.js",
+    "room": "node --watch room.js",
+    "start:room": "node room.js"
   },
   "dependencies": {
     "@socketty/shared": "workspace:^",
