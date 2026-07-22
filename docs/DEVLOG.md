@@ -11,6 +11,7 @@
 - [의사결정 기록 (ADR)](#의사결정-기록-adr)
   - [ADR-001. 모노레포 + pnpm workspace 채택](#adr-001-모노레포--pnpm-workspace-채택)
 - [학습 로그](#학습-로그)
+  - [2026-07-23 — Socket.IO 브로드캐스트와 채팅방 (emit/on 방향)](#2026-07-23--socketio-브로드캐스트와-채팅방-emiton-방향)
   - [2026-07-09 — WebSocket 메시지 경계와 스트리밍](#2026-07-09--websocket-메시지-경계와-스트리밍)
   - [2026-07-09 — HTTP vs SSE vs WebSocket 사용 시점](#2026-07-09--http-vs-sse-vs-websocket-사용-시점)
   - [2026-07-08 — 실시간 통신 방식 선택과 트레이드오프](#2026-07-08--실시간-통신-방식-선택과-트레이드오프)
@@ -93,6 +94,55 @@ socketty/
 ---
 
 ## 학습 로그
+
+### 2026-07-23 — Socket.IO 브로드캐스트와 채팅방 (emit/on 방향)
+
+**한 일**
+- 사람↔사람 실시간 채팅방 구현 (`apps/server/room.js` + `apps/web`의 `Room.tsx`, `/room`).
+- 닉네임 입장 화면, 입장 알림(`join`→`notice`), 말풍선 UI까지.
+- Render(소켓 서버) + Vercel(web)로 배포. → 상세: [DEPLOY.md](./DEPLOY.md)
+
+**핵심: 보내기(`emit`)의 대상 3가지 — 여기서 헷갈렸음**
+
+| 코드 | 대상 | 비유 |
+|---|---|---|
+| `socket.emit` | **나(그 연결) 한 명에게만** | 그 손님 테이블에만 |
+| `io.emit` | **접속한 전원에게** | 가게 전체 방송 |
+| `socket.broadcast.emit` | **나 빼고 전원** | 나 말고 다른 손님 전부 |
+
+- ❌ 실수 기록: "`socket.emit`=전체 / `io.emit`=개인"으로 반대로 외웠음.
+  → `socket`은 **연결 하나**, `io`는 **서버 전체**. 그래서 개인=`socket`, 전체=`io`.
+- 채팅방이 되려면 서버가 받은 걸 **전원에게 되뿌려야** 하므로 `io.emit`.
+  `socket.emit`으로 되돌리면 **보낸 사람만 보는 에코**라 채팅이 안 됨.
+
+**방향: `emit`=보내기 / `on`=받기, 양쪽 다 씀 (방향만 반대)**
+```
+클라 emit("message") ──▶ 서버 on("message")        (올려보냄)
+서버 io.emit("message") ──▶ 클라 on("message")      (전원에게 되뿌림)
+```
+- 서버 핸들러 = "받아서 되뿌리는 릴레이":
+```js
+socket.on("message", (data) => io.emit("message", data)); // 전원에게
+socket.on("join",    (name) => io.emit("notice", `${name}님 입장`));
+```
+- **이름표(이벤트 이름)로 종류를 구분**하고, 데이터는 뒤에 딸려감. 보낸 쪽·받는 쪽 이름이 같아야 짝이 맞음.
+
+**클라: 받은 값을 state에 쌓기 — 업데이터 함수(`prev`)를 쓰는 이유**
+```js
+socket.on("message", (data) => setMessage((prev) => [...prev, data]));
+```
+- `setMessage([...message, data])`처럼 바깥 `message`를 직접 쓰면, `useEffect`가 **마운트 때 1번** 등록되며 그 시점의 낡은 `message`(빈 배열)를 계속 붙잡음(**stale closure**) → 새 메시지가 이전 걸 덮어씀.
+- `(prev) => [...prev, data]` **업데이터 함수**를 넘기면 React가 **항상 최신 상태**를 인자로 줌 → 낡은 값 문제 없음.
+
+**실무면 더 볼 것 (오늘은 원리에 집중, 디테일은 나중)**
+- **저장**: 지금은 새로고침하면 사라짐(메모리뿐). 실무는 DB 저장 → 재접속 시 HTTP로 과거 로드 → WS로 이어감. (`전송 ≠ 저장`)
+- **신원**: 닉네임을 클라가 보내는 대로 믿음 → 위조 가능. 실무는 로그인 후 서버가 인증된 user를 붙임.
+- **확장**: `io.emit`은 자기 서버에 붙은 클라만 도달 → 서버 여러 대면 Redis 어댑터로 서버 간 공유 필요.
+
+**한 줄 요약**
+> 개인=`socket`, 전체=`io`. 받기는 양쪽 다 `socket.on`. 채팅 릴레이는 `on`으로 받아 `io.emit`으로 되뿌리기.
+
+---
 
 ### 2026-07-09 — WebSocket 메시지 경계와 스트리밍
 
